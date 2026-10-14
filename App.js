@@ -1,5 +1,5 @@
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import Flag from './src/components/Flag';
 import GuessForm from './src/components/GuessForm';
 import ScoreBoard from './src/components/ScoreBoard';
@@ -40,16 +40,17 @@ function Game() {
 export default function App() {
   return (
     <GameProvider>
-      <View style={styles.container}>
+      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
         <Game />
-      </View>
+      </ScrollView>
       <StatusBar style="auto" />
     </GameProvider>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', padding: 24 },
-  center: { gap: 12, alignItems: 'center' },
+  container: { flexGrow: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
+  // Columna centrada con ancho máximo para que en web/tablet no se estire a toda la pantalla
+  center: { width: '100%', maxWidth: 420, gap: 12, alignItems: 'center' },
   hint: { fontSize: 14, fontStyle: 'italic', textAlign: 'center' },
 });
