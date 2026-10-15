@@ -4,10 +4,12 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 
 const API_URL = 'https://countriesnow.space/api/v0.1/countries/flag/images';
+const TIME_LIMIT = 15;
 
 const GameContext = createContext(null);
 
@@ -36,6 +38,7 @@ export function GameProvider({ children }) {
   const [countries, setCountries] = useState([]);
   const [currentCountry, setCurrentCountry] = useState(null);
   const [score, setScore] = useState(0);
+  const [timeLeft, setTimeLeft] = useState(TIME_LIMIT);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -68,29 +71,53 @@ export function GameProvider({ children }) {
     };
   }, []);
 
+  // Pasa a otro país y reinicia el timer en el mismo render
   const nextCountry = useCallback(() => {
     setCurrentCountry((prev) => pickRandom(countries, prev));
+    setTimeLeft(TIME_LIMIT);
   }, [countries]);
 
-  // Devuelve true/false para que la UI pueda dar feedback
-  const guess = useCallback(
-    (answer) => {
-      if (!currentCountry) return false;
+  // Copia de timeLeft para leerla dentro del intervalo sin recrearlo cada segundo
+  const timeLeftRef = useRef(TIME_LIMIT);
+  useEffect(() => {
+    timeLeftRef.current = timeLeft;
+  }, [timeLeft]);
 
-      const cleaned = normalize(answer ?? '');
-      if (!cleaned) return false; // vacío o solo espacios: no hace nada
+  // Cuenta regresiva: un solo intervalo por bandera, se limpia al cambiar de país
+  useEffect(() => {
+    if (!currentCountry) return;
 
-      const isCorrect = cleaned === normalize(currentCountry.name);
-
-      if (isCorrect) {
-        setScore((s) => s + 10);
+    const id = setInterval(() => {
+      if (timeLeftRef.current <= 1) {
+        // Se acabó el tiempo: se pierde la bandera sin restar puntos
         nextCountry();
       } else {
-        setScore((s) => s - 1);
+        setTimeLeft((t) => t - 1);
       }
-      return isCorrect;
+    }, 1000);
+
+    return () => clearInterval(id);
+  }, [currentCountry, nextCountry]);
+
+  // Devuelve los puntos de la jugada: +N si acierta, -1 si falla, 0 si no hizo nada
+  const guess = useCallback(
+    (answer) => {
+      if (!currentCountry) return 0;
+
+      const cleaned = normalize(answer ?? '');
+      if (!cleaned) return 0; // vacío o solo espacios: no hace nada
+
+      if (cleaned === normalize(currentCountry.name)) {
+        const points = 10 + timeLeft;
+        setScore((s) => s + points);
+        nextCountry();
+        return points;
+      }
+
+      setScore((s) => s - 1);
+      return -1;
     },
-    [currentCountry, nextCountry]
+    [currentCountry, timeLeft, nextCountry]
   );
 
   const resetScore = useCallback(() => setScore(0), []);
@@ -100,13 +127,14 @@ export function GameProvider({ children }) {
       countries,
       currentCountry,
       score,
+      timeLeft,
       loading,
       error,
       guess,
       nextCountry,
       resetScore,
     }),
-    [countries, currentCountry, score, loading, error, guess, nextCountry, resetScore]
+    [countries, currentCountry, score, timeLeft, loading, error, guess, nextCountry, resetScore]
   );
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;

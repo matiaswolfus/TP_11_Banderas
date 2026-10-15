@@ -5,14 +5,14 @@ import { useGame } from '../context/GameContext';
 export default function GuessForm() {
   const { guess } = useGame();
   const [answer, setAnswer] = useState('');
-  const [feedback, setFeedback] = useState(null); // 'correct' | 'wrong' | null
+  const [feedback, setFeedback] = useState(null); // puntos de la última jugada (+N o -1) | null
 
   const handleSubmit = () => {
-    if (!answer.trim()) return;
+    const points = guess(answer);
+    if (points === 0) return; // vacío: no hace nada
 
-    const isCorrect = guess(answer);
-    setFeedback(isCorrect ? 'correct' : 'wrong');
-    if (isCorrect) setAnswer('');
+    setFeedback(points);
+    if (points > 0) setAnswer('');
   };
 
   return (
@@ -39,9 +39,9 @@ export default function GuessForm() {
         <Text style={styles.buttonText}>Adivinar</Text>
       </Pressable>
 
-      {feedback && (
-        <Text style={[styles.feedback, feedback === 'correct' ? styles.correct : styles.wrong]}>
-          {feedback === 'correct' ? '¡Correcto! +10' : 'Incorrecto, -1'}
+      {feedback !== null && (
+        <Text style={[styles.feedback, feedback > 0 ? styles.correct : styles.wrong]}>
+          {feedback > 0 ? `¡Correcto! +${feedback}` : `Incorrecto, ${feedback}`}
         </Text>
       )}
     </View>

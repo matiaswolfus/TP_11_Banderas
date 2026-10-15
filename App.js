@@ -4,6 +4,7 @@ import Flag from './src/components/Flag';
 import GuessForm from './src/components/GuessForm';
 import ScoreBoard from './src/components/ScoreBoard';
 import { GameProvider, useGame } from './src/context/GameContext';
+import Timer from './src/components/Timer';
 
 function Game() {
   const { loading, error } = useGame();
@@ -31,6 +32,7 @@ function Game() {
       </Text>
 
       <ScoreBoard />
+      <Timer />
       <Flag />
       <GuessForm />
     </View>
