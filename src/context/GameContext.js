@@ -7,9 +7,22 @@ import {
   useRef,
   useState,
 } from 'react';
+import { loadScores, saveBestScore } from '../storage/scoreStorage';
 
 const API_URL = 'https://countriesnow.space/api/v0.1/countries/flag/images';
 const TIME_LIMIT = 15;
+
+export const MODES = { FLAGS: 'flags', CAPITALS: 'capitals' };
+
+const EMPTY_SCORES = Object.fromEntries(Object.values(MODES).map((m) => [m, []]));
+
+// Lee el ranking de todos los modos: { flags: [...], capitals: [...] }
+const loadAllScores = async () => {
+  const entries = await Promise.all(
+    Object.values(MODES).map(async (m) => [m, await loadScores(m)])
+  );
+  return Object.fromEntries(entries);
+};
 
 const GameContext = createContext(null);
 
@@ -18,7 +31,7 @@ const normalize = (text) =>
   text
     .toString()
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[̀-ͯ]/g, '')
     .toLowerCase()
     .trim()
     .replace(/\s+/g, ' ');
@@ -42,7 +55,14 @@ export function GameProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Al montar: traer países y elegir uno al azar
+  // Multijugador
+  const [playing, setPlaying] = useState(false);
+  const [playerName, setPlayerName] = useState('');
+  const [mode, setMode] = useState(MODES.FLAGS);
+  const [scores, setScores] = useState(EMPTY_SCORES);
+  const [storageError, setStorageError] = useState(null);
+
+  // Al montar: traer países
   useEffect(() => {
     let cancelled = false;
 
@@ -71,6 +91,25 @@ export function GameProvider({ children }) {
     };
   }, []);
 
+  // Al montar: leer el ranking guardado
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadRanking = async () => {
+      try {
+        const saved = await loadAllScores();
+        if (!cancelled) setScores(saved);
+      } catch {
+        if (!cancelled) setStorageError('No se pudo leer el ranking guardado.');
+      }
+    };
+
+    loadRanking();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Pasa a otro país y reinicia el timer en el mismo render
   const nextCountry = useCallback(() => {
     setCurrentCountry((prev) => pickRandom(countries, prev));
@@ -83,9 +122,9 @@ export function GameProvider({ children }) {
     timeLeftRef.current = timeLeft;
   }, [timeLeft]);
 
-  // Cuenta regresiva: un solo intervalo por bandera, se limpia al cambiar de país
+  // Cuenta regresiva: solo mientras se juega, un intervalo por bandera
   useEffect(() => {
-    if (!currentCountry) return;
+    if (!playing || !currentCountry) return;
 
     const id = setInterval(() => {
       if (timeLeftRef.current <= 1) {
@@ -97,7 +136,36 @@ export function GameProvider({ children }) {
     }, 1000);
 
     return () => clearInterval(id);
-  }, [currentCountry, nextCountry]);
+  }, [playing, currentCountry, nextCountry]);
+
+  // Empieza una partida nueva para el jugador y modo elegidos
+  const startGame = useCallback(
+    (name, selectedMode) => {
+      const cleanName = (name ?? '').trim().replace(/\s+/g, ' ');
+      if (!cleanName || countries.length === 0) return false;
+
+      setPlayerName(cleanName);
+      setMode(selectedMode);
+      setScore(0);
+      setTimeLeft(TIME_LIMIT);
+      setCurrentCountry(pickRandom(countries, null));
+      setStorageError(null);
+      setPlaying(true);
+      return true;
+    },
+    [countries]
+  );
+
+  // Termina la partida: vuelve al inicio y guarda el mejor puntaje del jugador en este modo
+  const endGame = useCallback(async () => {
+    setPlaying(false);
+    try {
+      await saveBestScore(playerName, mode, score);
+      setScores(await loadAllScores());
+    } catch {
+      setStorageError('No se pudo guardar el puntaje.');
+    }
+  }, [playerName, mode, score]);
 
   // Devuelve los puntos de la jugada: +N si acierta, -1 si falla, 0 si no hizo nada
   const guess = useCallback(
@@ -130,11 +198,35 @@ export function GameProvider({ children }) {
       timeLeft,
       loading,
       error,
+      playing,
+      playerName,
+      mode,
+      scores,
+      storageError,
       guess,
       nextCountry,
       resetScore,
+      startGame,
+      endGame,
     }),
-    [countries, currentCountry, score, timeLeft, loading, error, guess, nextCountry, resetScore]
+    [
+      countries,
+      currentCountry,
+      score,
+      timeLeft,
+      loading,
+      error,
+      playing,
+      playerName,
+      mode,
+      scores,
+      storageError,
+      guess,
+      nextCountry,
+      resetScore,
+      startGame,
+      endGame,
+    ]
   );
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;

@@ -1,13 +1,14 @@
 import { StatusBar } from 'expo-status-bar';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { GameProvider, useGame } from './src/context/GameContext';
+import ScoreBoard from './src/components/ScoreBoard';
+import Timer from './src/components/Timer';
 import Flag from './src/components/Flag';
 import GuessForm from './src/components/GuessForm';
-import ScoreBoard from './src/components/ScoreBoard';
-import { GameProvider, useGame } from './src/context/GameContext';
-import Timer from './src/components/Timer';
+import StartScreen from './src/components/StartScreen';
 
 function Game() {
-  const { loading, error } = useGame();
+  const { loading, error, playing, playerName, endGame } = useGame();
 
   if (loading) {
     return (
@@ -25,16 +26,31 @@ function Game() {
     );
   }
 
+  if (!playing) {
+    return (
+      <View style={styles.center}>
+        <StartScreen />
+      </View>
+    );
+  }
+
   return (
     <View style={styles.center}>
+      <Text style={styles.player}>Jugador: {playerName}</Text>
       <Text style={styles.hint}>
-        Respondé con el nombre del país en inglés (ej: "Germany", no "Alemania").
+        {'Respondé con el nombre del país en inglés (ej: "Germany", no "Alemania").'}
       </Text>
-
       <ScoreBoard />
       <Timer />
       <Flag />
       <GuessForm />
+
+      <Pressable
+        onPress={endGame}
+        style={({ pressed }) => [styles.endButton, pressed && styles.endButtonPressed]}
+      >
+        <Text style={styles.endButtonText}>Terminar partida</Text>
+      </Pressable>
     </View>
   );
 }
@@ -42,17 +58,38 @@ function Game() {
 export default function App() {
   return (
     <GameProvider>
-      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-        <Game />
-      </ScrollView>
-      <StatusBar style="auto" />
+      <View style={styles.container}>
+        <ScrollView
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+        >
+          <Game />
+        </ScrollView>
+        <StatusBar style="auto" />
+      </View>
     </GameProvider>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flexGrow: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
-  // Columna centrada con ancho máximo para que en web/tablet no se estire a toda la pantalla
-  center: { width: '100%', maxWidth: 420, gap: 12, alignItems: 'center' },
+  container: { flex: 1 },
+  content: { flexGrow: 1, justifyContent: 'center', padding: 24 },
+  center: {
+    gap: 12,
+    alignItems: 'center',
+    width: '100%',
+    maxWidth: 420,
+    alignSelf: 'center',
+  },
+  player: { fontSize: 16, fontWeight: '700' },
   hint: { fontSize: 14, fontStyle: 'italic', textAlign: 'center' },
+  endButton: {
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: '#b91c1c',
+  },
+  endButtonPressed: { opacity: 0.8 },
+  endButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
 });
