@@ -11,18 +11,10 @@ import { loadScores, saveBestScore } from '../storage/scoreStorage';
 
 const API_URL = 'https://countriesnow.space/api/v0.1/countries/flag/images';
 const TIME_LIMIT = 15;
+const HINT_COST = 2; // segundos que descuenta cada pista
 
-export const MODES = { FLAGS: 'flags', CAPITALS: 'capitals' };
-
-const EMPTY_SCORES = Object.fromEntries(Object.values(MODES).map((m) => [m, []]));
-
-// Lee el ranking de todos los modos: { flags: [...], capitals: [...] }
-const loadAllScores = async () => {
-  const entries = await Promise.all(
-    Object.values(MODES).map(async (m) => [m, await loadScores(m)])
-  );
-  return Object.fromEntries(entries);
-};
+// Clave con la que se guarda el ranking en el storage
+const SCORES_KEY = 'flags';
 
 const GameContext = createContext(null);
 
@@ -31,10 +23,13 @@ const normalize = (text) =>
   text
     .toString()
     .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
+    .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .trim()
     .replace(/\s+/g, ' ');
+
+// Es letra si tiene mayúscula/minúscula distinta (espacios, guiones y apóstrofes no)
+const isLetter = (ch) => ch.toLowerCase() !== ch.toUpperCase();
 
 // Elige un país al azar, evitando repetir el actual si hay más de uno
 const pickRandom = (list, exclude) => {
@@ -52,14 +47,14 @@ export function GameProvider({ children }) {
   const [currentCountry, setCurrentCountry] = useState(null);
   const [score, setScore] = useState(0);
   const [timeLeft, setTimeLeft] = useState(TIME_LIMIT);
+  const [revealed, setRevealed] = useState([]); // posiciones de letras reveladas
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   // Multijugador
   const [playing, setPlaying] = useState(false);
   const [playerName, setPlayerName] = useState('');
-  const [mode, setMode] = useState(MODES.FLAGS);
-  const [scores, setScores] = useState(EMPTY_SCORES);
+  const [scores, setScores] = useState([]);
   const [storageError, setStorageError] = useState(null);
 
   // Al montar: traer países
@@ -97,7 +92,7 @@ export function GameProvider({ children }) {
 
     const loadRanking = async () => {
       try {
-        const saved = await loadAllScores();
+        const saved = await loadScores(SCORES_KEY);
         if (!cancelled) setScores(saved);
       } catch {
         if (!cancelled) setStorageError('No se pudo leer el ranking guardado.');
@@ -110,10 +105,11 @@ export function GameProvider({ children }) {
     };
   }, []);
 
-  // Pasa a otro país y reinicia el timer en el mismo render
+  // Pasa a otro país, reinicia el timer y borra las pistas en el mismo render
   const nextCountry = useCallback(() => {
     setCurrentCountry((prev) => pickRandom(countries, prev));
     setTimeLeft(TIME_LIMIT);
+    setRevealed([]);
   }, [countries]);
 
   // Copia de timeLeft para leerla dentro del intervalo sin recrearlo cada segundo
@@ -122,32 +118,42 @@ export function GameProvider({ children }) {
     timeLeftRef.current = timeLeft;
   }, [timeLeft]);
 
-  // Cuenta regresiva: solo mientras se juega, un intervalo por bandera
-  useEffect(() => {
-    if (!playing || !currentCountry) return;
+  // Nombre con "_" en las letras que faltan: ['G','_','r','_','a','_','y']
+  const hintMask = useMemo(() => {
+    if (!currentCountry) return [];
+    return Array.from(currentCountry.name).map((ch, i) =>
+      isLetter(ch) && !revealed.includes(i) ? '_' : ch
+    );
+  }, [currentCountry, revealed]);
 
-    const id = setInterval(() => {
-      if (timeLeftRef.current <= 1) {
-        // Se acabó el tiempo: se pierde la bandera sin restar puntos
-        nextCountry();
-      } else {
-        setTimeLeft((t) => t - 1);
-      }
-    }, 1000);
+  // Se puede pedir pista si quedan letras ocultas y el tiempo alcanza para pagarla
+  const canHint =
+    playing && currentCountry !== null && timeLeft > HINT_COST && hintMask.includes('_');
 
-    return () => clearInterval(id);
-  }, [playing, currentCountry, nextCountry]);
+  // Revela una letra al azar y descuenta HINT_COST segundos
+  const requestHint = useCallback(() => {
+    if (!canHint) return;
+
+    const hidden = [];
+    hintMask.forEach((ch, i) => {
+      if (ch === '_') hidden.push(i);
+    });
+    const pick = hidden[Math.floor(Math.random() * hidden.length)];
+
+    setRevealed((prev) => [...prev, pick]);
+    setTimeLeft((t) => Math.max(0, t - HINT_COST));
+  }, [canHint, hintMask]);
 
   // Empieza una partida nueva para el jugador y modo elegidos
   const startGame = useCallback(
-    (name, selectedMode) => {
+    (name) => {
       const cleanName = (name ?? '').trim().replace(/\s+/g, ' ');
       if (!cleanName || countries.length === 0) return false;
 
       setPlayerName(cleanName);
-      setMode(selectedMode);
       setScore(0);
       setTimeLeft(TIME_LIMIT);
+      setRevealed([]);
       setCurrentCountry(pickRandom(countries, null));
       setStorageError(null);
       setPlaying(true);
@@ -160,12 +166,28 @@ export function GameProvider({ children }) {
   const endGame = useCallback(async () => {
     setPlaying(false);
     try {
-      await saveBestScore(playerName, mode, score);
-      setScores(await loadAllScores());
+      await saveBestScore(playerName, SCORES_KEY, score);
+      setScores(await loadScores(SCORES_KEY));
     } catch {
       setStorageError('No se pudo guardar el puntaje.');
     }
-  }, [playerName, mode, score]);
+  }, [playerName, score]);
+
+  // Cuenta regresiva: solo mientras se juega, un intervalo por bandera
+  useEffect(() => {
+    if (!playing || !currentCountry) return;
+
+    const id = setInterval(() => {
+      if (timeLeftRef.current <= 1) {
+        // Se acabó el tiempo: termina la partida y se guarda el puntaje
+        endGame();
+      } else {
+        setTimeLeft((t) => t - 1);
+      }
+    }, 1000);
+
+    return () => clearInterval(id);
+  }, [playing, currentCountry, endGame]);
 
   // Devuelve los puntos de la jugada: +N si acierta, -1 si falla, 0 si no hizo nada
   const guess = useCallback(
@@ -196,15 +218,18 @@ export function GameProvider({ children }) {
       currentCountry,
       score,
       timeLeft,
+      hintMask,
+      canHint,
+      hintCost: HINT_COST,
       loading,
       error,
       playing,
       playerName,
-      mode,
       scores,
       storageError,
       guess,
       nextCountry,
+      requestHint,
       resetScore,
       startGame,
       endGame,
@@ -214,15 +239,17 @@ export function GameProvider({ children }) {
       currentCountry,
       score,
       timeLeft,
+      hintMask,
+      canHint,
       loading,
       error,
       playing,
       playerName,
-      mode,
       scores,
       storageError,
       guess,
       nextCountry,
+      requestHint,
       resetScore,
       startGame,
       endGame,

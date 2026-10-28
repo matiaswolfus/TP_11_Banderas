@@ -1,11 +1,17 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useGame } from '../context/GameContext';
 
 export default function GuessForm() {
-  const { guess } = useGame();
+  const { guess, currentCountry } = useGame();
+  const inputRef = useRef(null);
   const [answer, setAnswer] = useState('');
   const [feedback, setFeedback] = useState(null); // puntos de la última jugada (+N o -1) | null
+
+  // Con cada bandera nueva el campo vuelve a quedar listo para escribir
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, [currentCountry]);
 
   const handleSubmit = () => {
     const points = guess(answer);
@@ -13,11 +19,16 @@ export default function GuessForm() {
 
     setFeedback(points);
     if (points > 0) setAnswer('');
+    // Acierte o falle, el campo queda listo para seguir escribiendo
+    inputRef.current?.focus();
   };
 
   return (
     <View style={styles.container}>
       <TextInput
+        ref={inputRef}
+        autoFocus
+        selectTextOnFocus
         style={styles.input}
         value={answer}
         onChangeText={(text) => {

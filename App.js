@@ -6,6 +6,7 @@ import Timer from './src/components/Timer';
 import Flag from './src/components/Flag';
 import GuessForm from './src/components/GuessForm';
 import StartScreen from './src/components/StartScreen';
+import Hint from './src/components/Hint';
 
 function Game() {
   const { loading, error, playing, playerName, endGame } = useGame();
@@ -43,6 +44,7 @@ function Game() {
       <ScoreBoard />
       <Timer />
       <Flag />
+      <Hint />
       <GuessForm />
 
       <Pressable
